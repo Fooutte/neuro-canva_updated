@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEURO//CANVAS</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #020408;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    font-family: 'Share Tech Mono', monospace;
+    cursor: crosshair;
+    user-select: none;
+  }
+
+  /* Scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,255,200,0.015) 2px,
+      rgba(0,255,200,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Ambient grid bg */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,180,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,180,0.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+
+  #world {
+    position: absolute;
+    width: 0; height: 0;
+    transform-origin: 0 0;
+  }
+
+  /* SVG connections */
+  #connections {
+    position: absolute;
+    width: 0; height: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  /* NODE base */
+  .node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    border: 1px solid;
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+    max-width: 280px;
+    word-wrap: break-word;
+    animation: nodeSpawn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+
+  @keyframes nodeSpawn {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.3); filter: blur(8px); }
+    to   { opacity: 1; transform: translate(-50%, -50%) scale(1);   filter: blur(0); }
+  }
+
+  /* Glitch on hover */
+  .node:hover {
+    animation: glitch 0.3s steps(2) infinite;
+  }
+  @keyframes glitch {
+    0%   { clip-path: inset(0 0 95% 0); transform: translate(calc(-50% + 2px), -50%); }
+    25%  { clip-path: inset(40% 0 50% 0); transform: translate(calc(-50% - 2px), -50%); }
+    50%  { clip-path: inset(80% 0 5% 0); transform: translate(calc(-50% + 1px), -50%); }
+    75%  { clip-path: inset(20% 0 70% 0); transform: translate(calc(-50% - 1px), -50%); }
+    100% { clip-path: inset(0); transform: translate(-50%, -50%); }
+  }
+
+  /* NODE TYPES */
+  .node-core {
+    border-color: #00ffe5;
+    background: rgba(0,255,229,0.05);
+    box-shadow: 0 0 30px rgba(0,255,229,0.3), inset 0 0 20px rgba(0,255,229,0.05);
+    color: #00ffe5;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 18px;
+    text-align: center;
+    padding: 20px 28px;
+    animation: corePulse 3s ease-in-out infinite, nodeSpawn 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards;
+    cursor: default;
+  }
+  @keyframes corePulse {
+    0%,100% { box-shadow: 0 0 30px rgba(0,255,229,0.3), inset 0 0 20px rgba(0,255,229,0.05); }
+    50%      { box-shadow: 0 0 60px rgba(0,255,229,0.6), inset 0 0 40px rgba(0,255,229,0.1); }
+  }
+
+  .node-input {
+    border-color: #ff00c8;
+    background: rgba(255,0,200,0.05);
+    box-shadow: 0 0 15px rgba(255,0,200,0.2);
+    color: #ff88e5;
+    min-width: 220px;
+  }
+  .node-input:hover { box-shadow: 0 0 25px rgba(255,0,200,0.5); animation: none; }
+
+  .node-response {
+    border-color: #00b4ff;
+    background: rgba(0,80,180,0.08);
+    box-shadow: 0 0 12px rgba(0,180,255,0.2);
+    color: #88d4ff;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .node-response:hover { box-shadow: 0 0 25px rgba(0,180,255,0.5); animation: none; }
+
+  .node-code {
+    border-color: #a0ff00;
+    background: rgba(80,200,0,0.05);
+    box-shadow: 0 0 12px rgba(160,255,0,0.2);
+    color: #c8ff66;
+    font-size: 12px;
+    white-space: pre-wrap;
+  }
+  .node-code:hover { box-shadow: 0 0 25px rgba(160,255,0,0.5); animation: none; }
+
+  .node-idea {
+    border-color: #ff9500;
+    background: rgba(255,100,0,0.05);
+    box-shadow: 0 0 12px rgba(255,149,0,0.2);
+    color: #ffcc77;
+    font-size: 13px;
+  }
+  .node-idea:hover { box-shadow: 0 0 25px rgba(255,149,0,0.5); animation: none; }
+
+  .node-loading {
+    border-color: #555;
+    background: rgba(80,80,80,0.05);
+    color: #888;
+    font-size: 12px;
+  }
+
+  .node-image {
+    border-color: #ff6bcb;
+    background: rgba(255,107,203,0.06);
+    box-shadow: 0 0 18px rgba(255,107,203,0.18);
+    color: #ffc7ee;
+    font-size: 11px;
+    max-width: 240px;
+  }
+  .node-image:hover { box-shadow: 0 0 25px rgba(255,107,203,0.4); animation: none; }
+
+  /* node type badge */
+  .node-badge {
+    font-size: 9px;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    margin-bottom: 6px;
+    font-family: 'Orbitron', sans-serif;
+  }
+
+  /* Delete button on node */
+  .node-delete {
+    position: absolute;
+    top: 4px; right: 6px;
+    font-size: 10px;
+    color: #ff4466;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    line-height: 1;
+  }
+  .node:hover .node-delete { opacity: 1; }
+
+  /* Expand button */
+  .node-expand {
+    position: absolute;
+    bottom: 4px; right: 6px;
+    font-size: 10px;
+    color: #00ffe5;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    letter-spacing: 1px;
+  }
+  .node:hover .node-expand { opacity: 0.7; }
+
+  /* SVG line style */
+  .connection-line {
+    stroke: rgba(0,255,229,0.2);
+    stroke-width: 1;
+    fill: none;
+    stroke-dasharray: 4 6;
+    animation: dashFlow 2s linear infinite;
+  }
+  @keyframes dashFlow {
+    from { stroke-dashoffset: 0; }
+    to   { stroke-dashoffset: -20; }
+  }
+  .connection-line.pink  { stroke: rgba(255,0,200,0.25); }
+  .connection-line.blue  { stroke: rgba(0,180,255,0.25); }
+  .connection-line.green { stroke: rgba(160,255,0,0.25); }
+  .connection-line.orange{ stroke: rgba(255,149,0,0.25); }
+
+  /* TOOLBAR */
+  #toolbar {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    gap: 10px;
+    background: rgba(2,4,8,0.9);
+    border: 1px solid rgba(0,255,229,0.3);
+    padding: 12px 20px;
+    box-shadow: 0 0 30px rgba(0,255,229,0.15);
+  }
+
+  #toolbar input {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(0,255,229,0.4);
+    color: #00ffe5;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    width: 320px;
+    outline: none;
+    padding: 4px 8px;
+  }
+  #toolbar input::placeholder { color: rgba(0,255,229,0.3); }
+
+  .tb-btn {
+    background: transparent;
+    border: 1px solid;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tb-btn-cyan  { border-color: #00ffe5; color: #00ffe5; }
+  .tb-btn-pink  { border-color: #ff00c8; color: #ff00c8; }
+  .tb-btn-green { border-color: #a0ff00; color: #a0ff00; }
+  .tb-btn-orange{ border-color: #ff9500; color: #ff9500; }
+  .tb-btn:hover { filter: brightness(1.5); box-shadow: 0 0 10px currentColor; }
+
+  /* HUD top */
+  #hud {
+    position: fixed;
+    top: 20px; left: 24px;
+    z-index: 1000;
+    color: rgba(0,255,229,0.5);
+    font-size: 11px;
+    letter-spacing: 2px;
+    line-height: 1.8;
+    font-family: 'Orbitron', sans-serif;
+  }
+  #hud .title { font-size: 18px; font-weight: 900; color: #00ffe5; letter-spacing: 4px; }
+  #hud .sub   { font-size: 9px; opacity: 0.5; }
+
+  #hud-right {
+    position: fixed;
+    top: 20px; right: 24px;
+    z-index: 1000;
+    color: rgba(0,255,229,0.4);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-align: right;
+    line-height: 2;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  #google-connect {
+    position: fixed;
+    top: 18px;
+    right: 180px;
+    z-index: 1001;
+    background: rgba(2,4,8,0.85);
+    border: 1px solid rgba(255,149,0,0.6);
+    color: #ffcc77;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #google-connect:hover {
+    box-shadow: 0 0 12px rgba(255,149,0,0.35);
+    filter: brightness(1.2);
+  }
+
+  /* Loading dots */
+  @keyframes dotBlink {
+    0%,80%,100% { opacity: 0; }
+    40% { opacity: 1; }
+  }
+  .dot { animation: dotBlink 1.4s infinite; }
+  .dot:nth-child(2) { animation-delay: 0.2s; }
+  .dot:nth-child(3) { animation-delay: 0.4s; }
+
+  /* Type selector chips */
+  #type-chips {
+    position: fixed;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    gap: 8px;
+  }
+  .chip {
+    padding: 4px 12px;
+    font-size: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 1px;
+    border: 1px solid;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: all 0.2s;
+  }
+  .chip.active { opacity: 1; box-shadow: 0 0 10px currentColor; }
+  .chip-text   { border-color: #00b4ff; color: #00b4ff; }
+  .chip-code   { border-color: #a0ff00; color: #a0ff00; }
+  .chip-idea   { border-color: #ff9500; color: #ff9500; }
+  .chip-ask    { border-color: #ff00c8; color: #ff00c8; }
+
+  /* Tooltip mini */
+  #mini-tip {
+    position: fixed;
+    bottom: 155px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(0,255,229,0.3);
+    font-size: 10px;
+    letter-spacing: 1px;
+    z-index: 1000;
+    font-family: 'Share Tech Mono', monospace;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="title">NEURO//CANVAS</div>
+  <div class="sub">INFINITE AI MIND-MAP · CYBERPUNK EDITION</div>
+  <div id="node-count" style="margin-top:6px">NODES: 1</div>
+</div>
+
+<div id="hud-right">
+  <div>PAN: drag canvas</div>
+  <div>ZOOM: scroll</div>
+  <div>MOVE: drag notes</div>
+  <div>DELETE: hover node → ×</div>
+  <div>EXPAND: hover → [+]</div>
+</div>
+
+<button id="google-connect">🔗 GOOGLE</button>
+
+<div id="mini-tip">MODE ACTIF → <span id="active-mode-label">ASK GROQ</span></div>
+
+<div id="type-chips">
+  <div class="chip chip-ask active" data-mode="ask">◈ ASK GROQ</div>
+  <div class="chip chip-text" data-mode="text">◻ TEXTE LIBRE</div>
+  <div class="chip chip-code" data-mode="code">⌨ CODE</div>
+  <div class="chip chip-idea" data-mode="idea">◉ IDÉE</div>
+</div>
+
+<div id="toolbar">
+  <input id="main-input" type="text" placeholder="écris quelque chose... puis ENTER ou clique ADD" />
+  <button class="tb-btn tb-btn-cyan" id="btn-add">ADD ↵</button>
+  <button class="tb-btn tb-btn-pink" id="btn-save">SAVE</button>
+  <button class="tb-btn tb-btn-green" id="btn-load">LOAD</button>
+  <button class="tb-btn tb-btn-orange" id="btn-export">EXPORT</button>
+  <button class="tb-btn tb-btn-cyan" id="btn-import">IMPORT</button>
+  <button class="tb-btn tb-btn-pink" id="btn-image">IMAGE</button>
+  <button class="tb-btn tb-btn-green" id="btn-clear">CLEAR</button>
+  <button class="tb-btn tb-btn-orange" id="btn-center">CENTER</button>
+</div>
+
+<input type="file" id="json-input" accept=".json" hidden />
+<input type="file" id="image-input" accept="image/*" hidden />
+
+<div id="canvas">
+  <svg id="connections" style="position:absolute;width:0;height:0;overflow:visible;z-index:2;pointer-events:none;"></svg>
+  <div id="world"></div>
+</div>
+
+<script>
+// ─── STATE ───────────────────────────────────────────────────────────────────
+const state = {
+  nodes: [],
+  connections: [],
+  nextId: 1,
+  pan: { x: 0, y: 0 },
+  zoom: 1,
+  dragging: false,
+  draggingNodeId: null,
+  lastMouse: { x: 0, y: 0 },
+  mode: 'ask',
+  activeNodeId: null,
+};
+
+const world = document.getElementById('world');
+const svg = document.getElementById('connections');
+const canvas = document.getElementById('canvas');
+
+function screenToWorld(x, y) {
+  return {
+    x: (x - state.pan.x) / state.zoom,
+    y: (y - state.pan.y) / state.zoom,
+  };
+}
+
+function applyTransform() {
+  world.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
+  svg.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
+}
+
+function updateHUD() {
+  document.getElementById('node-count').textContent = `NODES: ${state.nodes.length}`;
+}
+
+function getNodeById(id) {
+  return state.nodes.find(node => node.id === id);
+}
+
+function getNodeElement(id) {
+  return document.getElementById(`node-${id}`);
+}
+
+function setActiveNode(id) {
+  state.activeNodeId = id;
+  document.querySelectorAll('.node').forEach(node => node.style.outline = 'none');
+  const el = getNodeElement(id);
+  if (el) el.style.outline = '1px solid rgba(255,255,255,0.3)';
+}
+
+function updateNodeContent(id, text) {
+  const el = getNodeElement(id);
+  if (!el) return;
+  const node = getNodeById(id);
+  if (node) node.content = text;
+  const content = el.querySelector('.node-content');
+  if (content) {
+    content.innerHTML = '';
+    content.textContent = text;
+  }
+}
+
+function updateNodeType(id, type) {
+  const el = getNodeElement(id);
+  if (!el) return;
+  const node = getNodeById(id);
+  if (node) node.type = type;
+  el.className = `node node-${type}`;
+}
+
+function moveNodeTo(id, x, y) {
+  const node = getNodeById(id);
+  const el = getNodeElement(id);
+  if (!node || !el) return;
+  node.x = x;
+  node.y = y;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  updateAllConnections();
+}
+
+function updateAllConnections() {
+  state.connections.forEach(conn => {
+    const from = getNodeById(conn.fromId);
+    const to = getNodeById(conn.toId);
+    if (from && to) {
+      updateConnectionPath(conn.fromId, conn.toId, from, to, conn.lineEl);
+    }
+  });
+}
+
+function nodeBox(node) {
+  const el = getNodeElement(node.id);
+  if (!el) return null;
+  const width = el.offsetWidth || 220;
+  const height = el.offsetHeight || 60;
+  return {
+    x: node.x - width / 2,
+    y: node.y - height / 2,
+    width,
+    height,
+  };
+}
+
+function boxesOverlap(a, b) {
+  return !(a.x + a.width < b.x || b.x + b.width < a.x || a.y + a.height < b.y || b.y + b.height < a.y);
+}
+
+function findFreePosition(preferredX, preferredY, skipId) {
+  const step = 55;
+  for (let ring = 0; ring < 10; ring++) {
+    for (let i = 0; i < 12; i++) {
+      const angle = (Math.PI * 2 * i) / 12;
+      const x = preferredX + Math.cos(angle) * step * (ring + 1);
+      const y = preferredY + Math.sin(angle) * step * (ring + 1);
+      let okay = true;
+      for (const other of state.nodes) {
+        if (other.id === skipId || other.id === 0) continue;
+        const otherBox = nodeBox(other);
+        if (!otherBox) continue;
+        const candidate = { x: x - 95, y: y - 40, width: 190, height: 80 };
+        if (boxesOverlap(candidate, otherBox)) {
+          okay = false;
+          break;
+        }
+      }
+      if (okay) return { x, y };
+    }
+  }
+  return { x: preferredX, y: preferredY };
+}
+
+function ensureNodeSpacing(id) {
+  const node = getNodeById(id);
+  if (!node) return;
+  const free = findFreePosition(node.x, node.y, id);
+  moveNodeTo(id, free.x, free.y);
+}
+
+function persistProject() {
+  const payload = {
+    nextId: state.nextId,
+    pan: state.pan,
+    zoom: state.zoom,
+    nodes: state.nodes.map(node => ({
+      id: node.id,
+      x: node.x,
+      y: node.y,
+      type: node.type,
+      content: node.content,
+      badge: node.badge,
+      parentId: node.parentId,
+    })),
+  };
+  localStorage.setItem('neuro-canvas-project', JSON.stringify(payload));
+}
+
+function loadPersistedProject() {
+  const raw = localStorage.getItem('neuro-canvas-project');
+  if (!raw) return false;
+  try {
+    const saved = JSON.parse(raw);
+    state.nodes = [];
+    state.connections = [];
+    svg.innerHTML = '';
+    world.innerHTML = '';
+    state.nextId = saved.nextId || 1;
+    state.pan = saved.pan || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    state.zoom = saved.zoom || 1;
+    applyTransform();
+    createNode({
+      id: 0,
+      x: 0,
+      y: 0,
+      type: 'core',
+      content: 'GROQ\nCORE',
+      badge: '◈ IA CENTRALE',
+      parentId: null,
+    });
+    state.activeNodeId = 0;
+    (saved.nodes || []).forEach(node => {
+      if (node.id === 0) return;
+      createNode({
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        type: node.type,
+        content: node.content || '',
+        badge: node.badge || (node.type || 'response').toUpperCase(),
+        parentId: node.parentId,
+      });
+    });
+    updateHUD();
+    return true;
+  } catch (err) {
+    console.error(err);
+    return false;
+  }
+}
+
+function downloadFile(filename, content, type = 'application/json') {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportProject() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    nodes: state.nodes.map(node => ({
+      id: node.id,
+      x: node.x,
+      y: node.y,
+      type: node.type,
+      content: node.content,
+      badge: node.badge,
+      parentId: node.parentId,
+    })),
+  };
+  downloadFile('neuro-canvas-notes.json', JSON.stringify(payload, null, 2));
+}
+
+function importProject(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const raw = JSON.parse(reader.result);
+      const items = raw.nodes || [];
+      [...state.nodes].forEach(node => { if (node.id !== 0) removeNode(node.id); });
+      svg.innerHTML = '';
+      world.innerHTML = '';
+      state.nodes = [];
+      state.connections = [];
+      state.nextId = 1;
+      createNode({ id: 0, x: 0, y: 0, type: 'core', content: 'GROQ\nCORE', badge: '◈ IA CENTRALE', parentId: null });
+      state.activeNodeId = 0;
+      items.forEach(node => {
+        if (node.id === 0) return;
+        createNode({
+          id: node.id,
+          x: node.x || 0,
+          y: node.y || 0,
+          type: node.type || 'response',
+          content: node.content || '',
+          badge: node.badge || (node.type || 'response').toUpperCase(),
+          parentId: node.parentId || null,
+        });
+      });
+      updateHUD();
+      persistProject();
+    } catch (err) {
+      alert('Fichier incompatible ou corrompu.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function uploadImage(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    const parent = getNodeById(state.activeNodeId ?? 0) || { x: 0, y: 0 };
+    const pos = findFreePosition(parent.x || 0, parent.y || 0, null);
+    const id = state.nextId++;
+    createNode({
+      id,
+      x: pos.x,
+      y: pos.y,
+      type: 'image',
+      content: dataUrl,
+      badge: '🖼 IMAGE',
+      parentId: state.activeNodeId ?? 0,
+    });
+    persistProject();
+  };
+  reader.readAsDataURL(file);
+}
+
+// center on load
+state.pan.x = window.innerWidth / 2;
+state.pan.y = window.innerHeight / 2;
+applyTransform();
+
+window.addEventListener('mousemove', e => {
+  if (state.draggingNodeId !== null) {
+    const worldPos = screenToWorld(e.clientX, e.clientY);
+    moveNodeTo(state.draggingNodeId, worldPos.x, worldPos.y);
+    ensureNodeSpacing(state.draggingNodeId);
+    return;
+  }
+
+  if (!state.dragging) return;
+  state.pan.x += e.clientX - state.lastMouse.x;
+  state.pan.y += e.clientY - state.lastMouse.y;
+  state.lastMouse = { x: e.clientX, y: e.clientY };
+  applyTransform();
+});
+
+window.addEventListener('mouseup', () => {
+  if (state.draggingNodeId !== null) {
+    state.draggingNodeId = null;
+    canvas.style.cursor = 'crosshair';
+    persistProject();
+  }
+  state.dragging = false;
+  canvas.style.cursor = 'crosshair';
+});
+
+canvas.addEventListener('mousedown', e => {
+  if (e.target === canvas || e.target === world || e.target === svg) {
+    state.dragging = true;
+    state.lastMouse = { x: e.clientX, y: e.clientY };
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  const newZoom = Math.min(3, Math.max(0.2, state.zoom * delta));
+  const mx = e.clientX, my = e.clientY;
+  state.pan.x = mx - (mx - state.pan.x) * (newZoom / state.zoom);
+  state.pan.y = my - (my - state.pan.y) * (newZoom / state.zoom);
+  state.zoom = newZoom;
+  applyTransform();
+}, { passive: false });
+
+function createNode({ id, x, y, type, content, badge, parentId }) {
+  const el = document.createElement('div');
+  el.className = `node node-${type}`;
+  el.id = `node-${id}`;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.style.cursor = type === 'core' ? 'default' : 'grab';
+
+  const badgeEl = document.createElement('div');
+  badgeEl.className = 'node-badge';
+  badgeEl.textContent = badge || type.toUpperCase();
+  el.appendChild(badgeEl);
+
+  const contentEl = document.createElement('div');
+  contentEl.className = 'node-content';
+  if (type === 'image' && content && content.startsWith('data:image')) {
+    const img = document.createElement('img');
+    img.src = content;
+    img.alt = 'uploaded image';
+    img.style.maxWidth = '180px';
+    img.style.maxHeight = '140px';
+    img.style.display = 'block';
+    img.style.margin = '0 auto';
+    contentEl.appendChild(img);
+  } else {
+    contentEl.textContent = content || '';
+  }
+  el.appendChild(contentEl);
+
+  const del = document.createElement('span');
+  del.className = 'node-delete';
+  del.textContent = '×';
+  del.addEventListener('click', e => {
+    e.stopPropagation();
+    removeNode(id);
+  });
+  el.appendChild(del);
+
+  if (type !== 'core' && type !== 'loading') {
+    const exp = document.createElement('span');
+    exp.className = 'node-expand';
+    exp.textContent = '[+]';
+    exp.title = 'Demander à Groq d\'approfondir';
+    exp.addEventListener('click', e => {
+      e.stopPropagation();
+      expandNode(id, x, y, content || '');
+    });
+    el.appendChild(exp);
+  }
+
+  el.addEventListener('click', e => {
+    e.stopPropagation();
+    setActiveNode(id);
+  });
+
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.node-delete') || e.target.closest('.node-expand')) return;
+    if (type === 'core') return;
+    state.draggingNodeId = id;
+    e.stopPropagation();
+  });
+
+  world.appendChild(el);
+  const nodeData = {
+    id,
+    x,
+    y,
+    type,
+    content: content || '',
+    badge,
+    parentId,
+  };
+  state.nodes.push(nodeData);
+  updateHUD();
+
+  if (parentId !== null && parentId !== undefined) {
+    drawConnection(parentId, id, type);
+  }
+
+  requestAnimationFrame(() => {
+    if (type !== 'core') {
+      ensureNodeSpacing(id);
+      persistProject();
+    }
+  });
+
+  return el;
+}
+
+function removeNode(id) {
+  const el = getNodeElement(id);
+  if (el) el.remove();
+  state.nodes = state.nodes.filter(n => n.id !== id);
+  state.connections = state.connections.filter(c => {
+    if (c.fromId === id || c.toId === id) {
+      const line = document.getElementById(`conn-${c.fromId}-${c.toId}`);
+      if (line) line.remove();
+      return false;
+    }
+    return true;
+  });
+  updateHUD();
+  persistProject();
+}
+
+const colorMap = { response: 'blue', code: 'green', idea: 'orange', input: 'pink', text: 'blue', image: 'pink' };
+
+function drawConnection(fromId, toId, type) {
+  const from = getNodeById(fromId);
+  const to = getNodeById(toId);
+  if (!from || !to) return;
+
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  line.id = `conn-${fromId}-${toId}`;
+  const colorClass = colorMap[type] || 'cyan';
+  line.classList.add('connection-line', colorClass);
+  svg.appendChild(line);
+
+  state.connections.push({ fromId, toId, lineEl: line });
+  updateConnectionPath(fromId, toId, from, to, line);
+}
+
+function updateConnectionPath(fromId, toId, from, to, line) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const cx1 = from.x + dx * 0.4;
+  const cy1 = from.y;
+  const cx2 = to.x - dx * 0.4;
+  const cy2 = to.y;
+  line.setAttribute('d', `M${from.x},${from.y} C${cx1},${cy1} ${cx2},${cy2} ${to.x},${to.y}`);
+}
+
+function orbitPosition(parentX, parentY, index, total, radius) {
+  const existing = state.nodes.filter(n => n.parentId !== null && n.parentId !== undefined);
+  const angle = (Math.PI * 2 / Math.max(total, 6)) * index + (existing.length * 0.3);
+  const r = radius || (180 + Math.random() * 120);
+  return {
+    x: parentX + Math.cos(angle) * r,
+    y: parentY + Math.sin(angle) * r,
+  };
+}
+
+async function askGroq(prompt, context) {
+  const systemPrompt = context
+    ? `Tu es une IA intégrée dans un mind-map cyberpunk infini. Réponds de façon concise et percutante (2-4 phrases max, ou du code). Contexte du nœud parent: "${context}". Réponds à la question/idée de l'utilisateur.`
+    : `Tu es une IA intégrée dans un mind-map cyberpunk infini. Réponds de façon concise et percutante (2-4 phrases max, ou du code propre). Détecte si c'est une demande de code et réponds avec du code dans ce cas.`;
+
+  const response = await fetch('/api/groq', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama-3.1-8b-instant',
+      temperature: 0.7,
+      max_tokens: 800,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || data.error?.message || '// erreur de connexion neurale';
+}
+
+function detectResponseType(text) {
+  const codeIndicators = ['```', 'function ', 'const ', 'let ', 'var ', 'def ', 'class ', 'import ', '#include', '<html', 'SELECT '];
+  return codeIndicators.some(ind => text.includes(ind)) ? 'code' : 'response';
+}
+
+let addIndex = 0;
+
+async function addNodeFromInput(text) {
+  if (!text.trim()) return;
+  const parent = getNodeById(state.activeNodeId ?? 0);
+  const px = parent ? parent.x : 0;
+  const py = parent ? parent.y : 0;
+  const pos = orbitPosition(px, py, addIndex++, 8, 220);
+  const pid = state.activeNodeId ?? 0;
+
+  if (state.mode === 'ask') {
+    const promptId = state.nextId++;
+    createNode({ id: promptId, x: pos.x, y: pos.y, type: 'input', content: text, badge: '◈ QUERY', parentId: pid });
+
+    const loadId = state.nextId++;
+    const loadPos = orbitPosition(pos.x, pos.y, 0, 1, 160);
+    const loadEl = createNode({ id: loadId, x: loadPos.x, y: loadPos.y, type: 'loading', content: '', badge: '⟳ PROCESSING', parentId: promptId });
+    loadEl.querySelector('.node-content').innerHTML = '<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
+
+    try {
+      const context = parent ? (getNodeElement(parent.id)?.querySelector('.node-content')?.textContent || '') : '';
+      const reply = await askGroq(text, context);
+      const rType = detectResponseType(reply);
+      const cleanReply = reply.replace(/```[\w]*\n?/g, '').replace(/```/g, '').trim();
+
+      const rNode = getNodeById(loadId);
+      if (rNode) {
+        rNode.type = rType;
+        updateNodeType(loadId, rType);
+        const badge = rType === 'code' ? '⌨ CODE' : '◈ GROQ';
+        const loadBadge = getNodeElement(loadId)?.querySelector('.node-badge');
+        if (loadBadge) loadBadge.textContent = badge;
+        updateNodeContent(loadId, cleanReply);
+
+        const conn = state.connections.find(c => c.fromId === promptId && c.toId === loadId);
+        if (conn) {
+          conn.lineEl.className.baseVal = `connection-line ${colorMap[rType] || 'blue'}`;
+        }
+        persistProject();
+      }
+    } catch (err) {
+      updateNodeContent(loadId, '// NEURAL LINK LOST\n' + err.message);
+      updateNodeType(loadId, 'code');
+      persistProject();
+    }
+  } else {
+    const nodeId = state.nextId++;
+    const typeMap = { text: 'response', code: 'code', idea: 'idea' };
+    const badgeMap = { text: '◻ NOTE', code: '⌨ CODE', idea: '◉ IDÉE' };
+    createNode({
+      id: nodeId,
+      x: pos.x,
+      y: pos.y,
+      type: typeMap[state.mode],
+      content: text,
+      badge: badgeMap[state.mode],
+      parentId: pid,
+    });
+    persistProject();
+  }
+}
+
+async function expandNode(nodeId, x, y, content) {
+  const prompt = `Approfondis cette idée/ce code en 2-3 points clés ou sous-idées: "${content}"`;
+  const loadId = state.nextId++;
+  const lpos = orbitPosition(x, y, Math.random() * 6, 6, 180);
+  const loadEl = createNode({ id: loadId, x: lpos.x, y: lpos.y, type: 'loading', content: '', badge: '⟳ EXPANDING', parentId: nodeId });
+  loadEl.querySelector('.node-content').innerHTML = '<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
+
+  try {
+    const reply = await askGroq(prompt, content);
+    const rType = detectResponseType(reply);
+    const cleanReply = reply.replace(/```[\w]*\n?/g, '').replace(/```/g, '').trim();
+    updateNodeType(loadId, rType);
+    updateNodeContent(loadId, cleanReply);
+    const lb = getNodeElement(loadId)?.querySelector('.node-badge');
+    if (lb) lb.textContent = rType === 'code' ? '⌨ EXPANSION CODE' : '◈ EXPANSION';
+    persistProject();
+  } catch (e) {
+    updateNodeContent(loadId, '// EXPAND FAILED');
+    persistProject();
+  }
+}
+
+createNode({ id: 0, x: 0, y: 0, type: 'core', content: 'GROQ\nCORE', badge: '◈ IA CENTRALE', parentId: null });
+state.activeNodeId = 0;
+
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    state.mode = chip.dataset.mode;
+    document.getElementById('active-mode-label').textContent = chip.textContent.trim();
+
+    const input = document.getElementById('main-input');
+    const placeholders = {
+      ask: 'pose une question à Groq...',
+      text: 'écris une note libre...',
+      code: 'colle ou décris du code...',
+      idea: 'une idée, un concept...',
+    };
+    input.placeholder = placeholders[state.mode] || '';
+  });
+});
+
+document.getElementById('btn-add').addEventListener('click', () => {
+  const val = document.getElementById('main-input').value;
+  document.getElementById('main-input').value = '';
+  addNodeFromInput(val);
+});
+
+document.getElementById('main-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const val = e.target.value;
+    e.target.value = '';
+    addNodeFromInput(val);
+  }
+});
+
+document.getElementById('btn-save').addEventListener('click', () => {
+  persistProject();
+  alert('Projet sauvegardé localement.');
+});
+
+document.getElementById('btn-load').addEventListener('click', () => {
+  if (loadPersistedProject()) {
+    alert('Projet chargé depuis le stockage local.');
+  } else {
+    alert('Aucune sauvegarde locale trouvée.');
+  }
+});
+
+document.getElementById('btn-export').addEventListener('click', exportProject);
+
+document.getElementById('btn-import').addEventListener('click', () => {
+  document.getElementById('json-input').click();
+});
+
+document.getElementById('json-input').addEventListener('change', e => {
+  const file = e.target.files?.[0];
+  if (file) importProject(file);
+});
+
+document.getElementById('btn-image').addEventListener('click', () => {
+  document.getElementById('image-input').click();
+});
+
+document.getElementById('image-input').addEventListener('change', e => {
+  const file = e.target.files?.[0];
+  if (file) uploadImage(file);
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if (!confirm('Effacer tous les nœuds sauf le core ?')) return;
+  [...state.nodes].forEach(n => { if (n.id !== 0) removeNode(n.id); });
+  addIndex = 0;
+  state.activeNodeId = 0;
+  persistProject();
+});
+
+document.getElementById('btn-center').addEventListener('click', () => {
+  state.pan.x = window.innerWidth / 2;
+  state.pan.y = window.innerHeight / 2;
+  state.zoom = 1;
+  applyTransform();
+});
+
+document.getElementById('google-connect').addEventListener('click', () => {
+  window.open('https://accounts.google.com/', '_blank', 'noopener,noreferrer');
+});
+
+loadPersistedProject();
+</script>
+</body>
+</html>
